@@ -21,6 +21,7 @@ STAFF_ROLE_ID = 1366951587288846397  # ID du rôle Staff
 WELCOME_CHANNEL_ID = 1298738614850555954  # ID du salon de bienvenue
 TICKET_REQUEST_CHANNEL_ID = 1366953530597834792  # ID du salon pour demander un ticket
 LOG_CHANNEL_ID = 1366957862709891082  # ID du salon de logs pour les événements et messages supprimés
+NEW_MEMBER_ROLE_NAME = "Nouveaux"  # Nom du rôle à ajouter automatiquement aux nouveaux membres
 
 # ----- UI des tickets -----
 
@@ -105,6 +106,15 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
+    # 🔹 Ajout du rôle automatiquement
+    role = discord.utils.get(member.guild.roles, name=NEW_MEMBER_ROLE_NAME)
+    if role:
+        await member.add_roles(role)
+        print(f"Rôle '{role.name}' ajouté à {member.name}.")
+    else:
+        print("❌ Rôle 'Nouveaux' introuvable.")
+
+    # 🔹 Log dans le salon de logs
     log_channel = bot.get_channel(LOG_CHANNEL_ID)
     embed = discord.Embed(
         title="Nouveau membre",
@@ -113,7 +123,7 @@ async def on_member_join(member):
     )
     await log_channel.send(embed=embed)
 
-    # Envoi de l'embed de bienvenue dans le salon de bienvenue
+    # 🔹 Message de bienvenue dans le salon de bienvenue
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
     if channel:
         embed = discord.Embed(
@@ -121,7 +131,7 @@ async def on_member_join(member):
             description=f"Nous sommes ravis de t'accueillir parmi nous, {member.mention} !",
             color=discord.Color.blue()
         )
-        embed.set_image(url="https://i.ibb.co/ZpCDj4WK/Chat-GPT-Image-1-avr-2025-16-21-38-jpg.jpg")  # Image d'accueil
+        embed.set_image(url="https://i.ibb.co/ZpCDj4WK/Chat-GPT-Image-1-avr-2025-16-21-38-jpg.jpg")
         embed.set_footer(text="N'oublie pas de lire les règles et de te présenter !")
         await channel.send(embed=embed)
     else:
