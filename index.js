@@ -65,18 +65,19 @@ client.once(Events.ClientReady, async () => {
 });
 
 // Message de bienvenue
-client.on(Events.GuildMemberAdd, member => {
-    const channel = member.guild.systemChannel;
-    if (!channel) return;
-    channel.send({
-        embeds: [
-            new EmbedBuilder()
-                .setTitle(`👋 Bienvenue, ${member.user.username} !`)
-                .setDescription(`Bienvenue sur **${member.guild.name}**. Pense à lire les règles et choisir ton rôle !`)
-                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-                .setColor(0x00AE86)
-        ]
-    });
+client.on(Events.GuildMemberAdd, async member => {
+    const channelId = process.env.WELCOME_CHANNEL_ID;
+    const channel = await member.guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) return;
+
+    const embed = new EmbedBuilder()
+        .setTitle(`👋 Bienvenue, ${member.user.username} !`)
+        .setDescription(`Bienvenue sur **${member.guild.name}**.\n\n💬 Pense à lire les règles.\n🎭 Choisis ton rôle pour commencer.`)
+        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+    channel.send({ embeds: [embed] });
 });
 
 // Commandes texte
