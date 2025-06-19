@@ -38,66 +38,65 @@ if (fs.existsSync(commandsPath)) {
 }
 
 // READY + détection de mise à jour de version
-   client.once(Events.ClientReady, async () => {
-        console.log(`✅ Connecté en tant que ${client.user.tag}`);
+client.once(Events.ClientReady, async () => {
+    console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
-        const updateChannelId = process.env.UPDATE_CHANNEL_ID;
-        const pkg = require(path.join(__dirname, 'package.json'));
-        const currentVersion = pkg.version;
-        const versionFile = path.join(__dirname, 'lastversion.txt');
-        let lastVersion = '';
+    const updateChannelId = process.env.UPDATE_CHANNEL_ID;
+    const pkg = require(path.join(__dirname, 'package.json'));
+    const currentVersion = pkg.version;
+    const versionFile = path.join(__dirname, 'lastversion.txt');
+    let lastVersion = '';
 
-        console.log(`📦 Version actuelle : ${currentVersion}`);
+    console.log(`📦 Version actuelle : ${currentVersion}`);
 
-        // Lecture de lastversion.txt
-        if (fs.existsSync(versionFile)) {
-            lastVersion = fs.readFileSync(versionFile, 'utf8').trim();
-            console.log(`📄 Version précédente détectée : ${lastVersion}`);
-        } else {
-            console.log('📄 Aucune version précédente détectée.');
+    // Lecture de lastversion.txt
+    if (fs.existsSync(versionFile)) {
+        lastVersion = fs.readFileSync(versionFile, 'utf8').trim();
+        console.log(`📄 Version précédente détectée : ${lastVersion}`);
+    } else {
+        console.log('📄 Aucune version précédente détectée.');
+    }
+
+    // Comparaison
+    if (currentVersion !== lastVersion) {
+        console.log('🔁 Nouvelle version détectée, préparation du message...');
+
+        const channel = await client.channels.fetch(updateChannelId).catch(err => {
+            console.error('❌ Erreur récupération du salon :', err);
+            return null;
+        });
+
+        if (!channel || !channel.isTextBased()) {
+            return console.error('❌ Salon invalide ou inaccessible.');
         }
 
-        // Comparaison
-        if (currentVersion !== lastVersion) {
-            console.log('🔁 Nouvelle version détectée, préparation du message...');
+        let changelogText = '- Aucun changelog disponible.';
+        const changelogFile = path.join(__dirname, 'changelog.json');
 
-            const channel = await client.channels.fetch(updateChannelId).catch(err => {
-                console.error('❌ Erreur récupération du salon :', err);
-                return null;
-            });
-
-            if (!channel || !channel.isTextBased()) {
-                return console.error('❌ Salon invalide ou inaccessible.');
-            }
-
-            let changelogText = '- Aucun changelog disponible.';
-            const changelogFile = path.join(__dirname, 'changelog.json');
-
-            if (fs.existsSync(changelogFile)) {
-                console.log('📘 Lecture du changelog.json...');
-                const changelog = JSON.parse(fs.readFileSync(changelogFile, 'utf8'));
-                changelogText = changelog[currentVersion] || changelogText;
-                console.log('📘 Contenu du changelog pour cette version :', changelogText);
-            } else {
-                console.log('⚠️ Aucun fichier changelog.json trouvé.');
-            }
-
-            const embed = new EmbedBuilder()
-                .setTitle(`🔄 Mise à jour du bot : v${currentVersion}`)
-                .setDescription(changelogText)
-                .setColor(0xFFA500)
-                .setTimestamp();
-
-            await channel.send({ embeds: [embed] });
-            console.log('✅ Message de mise à jour envoyé dans Discord.');
-
-            fs.writeFileSync(versionFile, currentVersion);
-            console.log('📁 lastversion.txt mis à jour.');
+        if (fs.existsSync(changelogFile)) {
+            console.log('📘 Lecture du changelog.json...');
+            const changelog = JSON.parse(fs.readFileSync(changelogFile, 'utf8'));
+            changelogText = changelog[currentVersion] || changelogText;
+            console.log('📘 Contenu du changelog pour cette version :', changelogText);
         } else {
-            console.log('✅ Aucune nouvelle version détectée, pas de message envoyé.');
+            console.log('⚠️ Aucun fichier changelog.json trouvé.');
         }
-    });
 
+        const embed = new EmbedBuilder()
+            .setTitle(`🔄 Mise à jour du bot : v${currentVersion}`)
+            .setDescription(changelogText)
+            .setColor(0xFFA500)
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+        console.log('✅ Message de mise à jour envoyé dans Discord.');
+
+        fs.writeFileSync(versionFile, currentVersion);
+        console.log('📁 lastversion.txt mis à jour.');
+    } else {
+        console.log('✅ Aucune nouvelle version détectée, pas de message envoyé.');
+    }
+});
 
 // Message de bienvenue
 client.on(Events.GuildMemberAdd, async member => {
@@ -198,10 +197,16 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // Suppression (Admin E-5)
         if (id.startsWith('delete_event_')) {
+            const idx = parseInt(id.split('_')[2], 10);
             const adminRole = interaction.guild.roles.cache.find(r => r.name === 'E-5');
             if (!adminRole || !interaction.member.roles.cache.has(adminRole.id)) {
                 return interaction.reply({ content: '❌ Permission refusée.', ephemeral: true });
             }
+            if (!events[idx]) {
+                return interaction.reply({ content: '❌ Événement introuvable.', ephemeral: true });
+            }
+            events.splice(idx, 1);
+            fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
             await interaction.message.delete().catch(console.error);
             return interaction.reply({ content: '🗑️ Événement supprimé.', ephemeral: true });
         }
