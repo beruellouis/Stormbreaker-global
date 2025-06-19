@@ -1,4 +1,5 @@
 {
+  "1.1.0": "- ajout de la commande !logs",
   "1.0.4": "- Optimisation finales ",
   "1.0.3": "_ Ajout du système de changelog automatique\n- Correction de bugs sur les événements",
   "1.0.2": "- Ajout de l'accueil avec boutons\n- Correction de bugs mineurs",
