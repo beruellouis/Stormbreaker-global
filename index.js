@@ -49,6 +49,7 @@ client.once(Events.ClientReady, async () => {
 
     console.log(`📦 Version actuelle : ${currentVersion}`);
 
+    // Lecture de lastversion.txt
     if (fs.existsSync(versionFile)) {
         lastVersion = fs.readFileSync(versionFile, 'utf8').trim();
         console.log(`📄 Version précédente détectée : ${lastVersion}`);
@@ -56,6 +57,7 @@ client.once(Events.ClientReady, async () => {
         console.log('📄 Aucune version précédente détectée.');
     }
 
+    // Comparaison
     if (currentVersion !== lastVersion) {
         console.log('🔁 Nouvelle version détectée, préparation du message...');
 
@@ -121,17 +123,6 @@ client.on(Events.MessageCreate, async message => {
     if (!command) return;
     try {
         await command.execute(message, args);
-
-        // Enregistrement dans logs.json
-        const logsPath = path.join(__dirname, 'logs.json');
-        const logs = fs.existsSync(logsPath) ? JSON.parse(fs.readFileSync(logsPath)) : [];
-        logs.push({
-            userId: message.author.id,
-            username: message.author.username,
-            action: `Commande exécutée : !${commandName}`,
-            timestamp: new Date().toISOString()
-        });
-        fs.writeFileSync(logsPath, JSON.stringify(logs, null, 2));
     } catch (error) {
         console.error(error);
         message.reply('❌ Une erreur est survenue.');
@@ -140,6 +131,7 @@ client.on(Events.MessageCreate, async message => {
 
 // Gestion des interactions : bouton + modal + event
 client.on(Events.InteractionCreate, async interaction => {
+    // Ouverture du modal de don
     if (interaction.isButton() && interaction.customId === 'open_donation_modal') {
         const modal = new ModalBuilder()
             .setCustomId('custom_donation_modal')
@@ -154,6 +146,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.showModal(modal);
     }
 
+    // Traitement du modal de don
     if (interaction.isModalSubmit() && interaction.customId === 'custom_donation_modal') {
         const montant = parseInt(interaction.fields.getTextInputValue('donation_amount'), 10);
         if (isNaN(montant) || montant <= 0) {
@@ -172,11 +165,13 @@ client.on(Events.InteractionCreate, async interaction => {
         return interaction.reply({ content: `💸 Merci pour ton don de **${montant.toLocaleString()} aUEC** !`, ephemeral: true });
     }
 
+    // Gestion des boutons d'événement
     if (interaction.isButton()) {
         const id = interaction.customId;
         const eventsPath = path.join(__dirname, 'events.json');
         const events = JSON.parse(fs.readFileSync(eventsPath));
 
+        // Participation
         if (id.startsWith('join_event_')) {
             const idx = parseInt(id.split('_')[2], 10);
             const ev = events[idx];
@@ -190,6 +185,7 @@ client.on(Events.InteractionCreate, async interaction => {
             return interaction.reply({ content: '🎉 Participation confirmée !', ephemeral: true });
         }
 
+        // Désistement
         if (id.startsWith('decline_event_')) {
             const idx = parseInt(id.split('_')[2], 10);
             const ev = events[idx];
@@ -199,11 +195,18 @@ client.on(Events.InteractionCreate, async interaction => {
             return interaction.reply({ content: '❌ Tu ne participes plus.', ephemeral: true });
         }
 
+        // Suppression (Admin E-5)
         if (id.startsWith('delete_event_')) {
+            const idx = parseInt(id.split('_')[2], 10);
             const adminRole = interaction.guild.roles.cache.find(r => r.name === 'E-5');
             if (!adminRole || !interaction.member.roles.cache.has(adminRole.id)) {
                 return interaction.reply({ content: '❌ Permission refusée.', ephemeral: true });
             }
+            if (!events[idx]) {
+                return interaction.reply({ content: '❌ Événement introuvable.', ephemeral: true });
+            }
+            events.splice(idx, 1);
+            fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
             await interaction.message.delete().catch(console.error);
             return interaction.reply({ content: '🗑️ Événement supprimé.', ephemeral: true });
         }
@@ -211,5 +214,3 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-
-
