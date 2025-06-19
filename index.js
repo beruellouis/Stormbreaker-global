@@ -78,7 +78,6 @@ client.on(Events.GuildMemberAdd, member => {
         ]
     });
 });
-});
 
 // Commandes texte
 client.on(Events.MessageCreate, async message => {
