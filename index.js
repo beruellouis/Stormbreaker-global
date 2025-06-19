@@ -25,18 +25,6 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// Fonction de log
-function logAction(action) {
-    const logPath = path.join(__dirname, 'logs.json');
-    let logs = [];
-    if (fs.existsSync(logPath)) {
-        logs = JSON.parse(fs.readFileSync(logPath));
-    }
-    logs.push({ timestamp: new Date().toISOString(), action });
-    if (logs.length > 100) logs.shift();
-    fs.writeFileSync(logPath, JSON.stringify(logs, null, 2));
-}
-
 // Chargement des commandes
 client.commands = new Map();
 const commandsPath = path.join(__dirname, 'commands');
@@ -49,6 +37,7 @@ if (fs.existsSync(commandsPath)) {
         });
 }
 
+// READY + détection de mise à jour de version
 client.once(Events.ClientReady, async () => {
     console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
@@ -58,32 +47,56 @@ client.once(Events.ClientReady, async () => {
     const versionFile = path.join(__dirname, 'lastversion.txt');
     let lastVersion = '';
 
+    console.log(`📦 Version actuelle : ${currentVersion}`);
+
     if (fs.existsSync(versionFile)) {
         lastVersion = fs.readFileSync(versionFile, 'utf8').trim();
+        console.log(`📄 Version précédente détectée : ${lastVersion}`);
+    } else {
+        console.log('📄 Aucune version précédente détectée.');
     }
 
     if (currentVersion !== lastVersion) {
-        const channel = await client.channels.fetch(updateChannelId).catch(() => null);
-        if (channel && channel.isTextBased()) {
-            let changelogText = '- Aucun changelog disponible.';
-            const changelogFile = path.join(__dirname, 'changelog.json');
-            if (fs.existsSync(changelogFile)) {
-                const changelog = JSON.parse(fs.readFileSync(changelogFile, 'utf8'));
-                changelogText = changelog[currentVersion] || changelogText;
-            }
+        console.log('🔁 Nouvelle version détectée, préparation du message...');
 
-            const embed = new EmbedBuilder()
-                .setTitle(`🔄 Mise à jour du bot : v${currentVersion}`)
-                .setDescription(changelogText)
-                .setColor(0xFFA500)
-                .setTimestamp();
+        const channel = await client.channels.fetch(updateChannelId).catch(err => {
+            console.error('❌ Erreur récupération du salon :', err);
+            return null;
+        });
 
-            await channel.send({ embeds: [embed] });
+        if (!channel || !channel.isTextBased()) {
+            return console.error('❌ Salon invalide ou inaccessible.');
         }
+
+        let changelogText = '- Aucun changelog disponible.';
+        const changelogFile = path.join(__dirname, 'changelog.json');
+
+        if (fs.existsSync(changelogFile)) {
+            console.log('📘 Lecture du changelog.json...');
+            const changelog = JSON.parse(fs.readFileSync(changelogFile, 'utf8'));
+            changelogText = changelog[currentVersion] || changelogText;
+            console.log('📘 Contenu du changelog pour cette version :', changelogText);
+        } else {
+            console.log('⚠️ Aucun fichier changelog.json trouvé.');
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle(`🔄 Mise à jour du bot : v${currentVersion}`)
+            .setDescription(changelogText)
+            .setColor(0xFFA500)
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
+        console.log('✅ Message de mise à jour envoyé dans Discord.');
+
         fs.writeFileSync(versionFile, currentVersion);
+        console.log('📁 lastversion.txt mis à jour.');
+    } else {
+        console.log('✅ Aucune nouvelle version détectée, pas de message envoyé.');
     }
 });
 
+// Message de bienvenue
 client.on(Events.GuildMemberAdd, async member => {
     const channelId = process.env.WELCOME_CHANNEL_ID;
     const channel = await member.guild.channels.fetch(channelId).catch(() => null);
@@ -91,7 +104,7 @@ client.on(Events.GuildMemberAdd, async member => {
 
     const embed = new EmbedBuilder()
         .setTitle(`👋 Bienvenue, ${member.user.username} !`)
-        .setDescription(`Bienvenue sur **${member.guild.name}**.`)
+        .setDescription(`Bienvenue sur **${member.guild.name}**.\n\n💬 Pense à lire les règles.\n🎭 Choisis ton rôle pour commencer.`)
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setColor(0x00AE86)
         .setTimestamp();
@@ -99,6 +112,7 @@ client.on(Events.GuildMemberAdd, async member => {
     channel.send({ embeds: [embed] });
 });
 
+// Commandes texte
 client.on(Events.MessageCreate, async message => {
     if (message.author.bot || !message.content.startsWith('!')) return;
     const args = message.content.slice(1).trim().split(/\s+/);
@@ -107,50 +121,62 @@ client.on(Events.MessageCreate, async message => {
     if (!command) return;
     try {
         await command.execute(message, args);
+
+        // Enregistrement dans logs.json
+        const logsPath = path.join(__dirname, 'logs.json');
+        const logs = fs.existsSync(logsPath) ? JSON.parse(fs.readFileSync(logsPath)) : [];
+        logs.push({
+            userId: message.author.id,
+            username: message.author.username,
+            action: `Commande exécutée : !${commandName}`,
+            timestamp: new Date().toISOString()
+        });
+        fs.writeFileSync(logsPath, JSON.stringify(logs, null, 2));
     } catch (error) {
         console.error(error);
         message.reply('❌ Une erreur est survenue.');
     }
 });
 
+// Gestion des interactions : bouton + modal + event
 client.on(Events.InteractionCreate, async interaction => {
-    const id = interaction.customId;
-    const eventsPath = path.join(__dirname, 'events.json');
-    const events = fs.existsSync(eventsPath) ? JSON.parse(fs.readFileSync(eventsPath)) : [];
-
-    if (interaction.isButton() && id === 'open_donation_modal') {
+    if (interaction.isButton() && interaction.customId === 'open_donation_modal') {
         const modal = new ModalBuilder()
             .setCustomId('custom_donation_modal')
             .setTitle('Faire un don à Stormbreaker');
         const input = new TextInputBuilder()
             .setCustomId('donation_amount')
-            .setLabel('Montant (AUEC)')
+            .setLabel('Montant à donner (en AUEC)')
             .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Ex : 5000')
             .setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         return interaction.showModal(modal);
     }
 
-    if (interaction.isModalSubmit() && id === 'custom_donation_modal') {
+    if (interaction.isModalSubmit() && interaction.customId === 'custom_donation_modal') {
         const montant = parseInt(interaction.fields.getTextInputValue('donation_amount'), 10);
-        if (isNaN(montant) || montant <= 0) return interaction.reply({ content: 'Montant invalide.', ephemeral: true });
-
+        if (isNaN(montant) || montant <= 0) {
+            return interaction.reply({ content: '❌ Montant invalide.', ephemeral: true });
+        }
         const bp = path.join(__dirname, 'banque.json');
         const banque = JSON.parse(fs.readFileSync(bp));
-        banque.total = (banque.total || 0) + montant;
+        banque.total = banque.total || 0;
         banque.donateurs = banque.donateurs || {};
         banque.transactions = banque.transactions || [];
         const uid = interaction.user.id;
+        banque.total += montant;
         banque.donateurs[uid] = (banque.donateurs[uid] || 0) + montant;
         banque.transactions.push({ userId: uid, username: interaction.user.username, amount: montant, timestamp: new Date().toISOString() });
         fs.writeFileSync(bp, JSON.stringify(banque, null, 2));
-
-        logAction(`${interaction.user.tag} a fait un don de ${montant} aUEC`);
-
         return interaction.reply({ content: `💸 Merci pour ton don de **${montant.toLocaleString()} aUEC** !`, ephemeral: true });
     }
 
     if (interaction.isButton()) {
+        const id = interaction.customId;
+        const eventsPath = path.join(__dirname, 'events.json');
+        const events = JSON.parse(fs.readFileSync(eventsPath));
+
         if (id.startsWith('join_event_')) {
             const idx = parseInt(id.split('_')[2], 10);
             const ev = events[idx];
@@ -161,8 +187,16 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             ev.participants.push(interaction.user.id);
             fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
-            logAction(`${interaction.user.tag} a rejoint l'événement "${ev.nom || 'Sans nom'}"`);
             return interaction.reply({ content: '🎉 Participation confirmée !', ephemeral: true });
+        }
+
+        if (id.startsWith('decline_event_')) {
+            const idx = parseInt(id.split('_')[2], 10);
+            const ev = events[idx];
+            if (!ev) return interaction.reply({ content: '❌ Événement introuvable.', ephemeral: true });
+            ev.participants = (ev.participants || []).filter(u => u !== interaction.user.id);
+            fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
+            return interaction.reply({ content: '❌ Tu ne participes plus.', ephemeral: true });
         }
 
         if (id.startsWith('delete_event_')) {
@@ -171,11 +205,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 return interaction.reply({ content: '❌ Permission refusée.', ephemeral: true });
             }
             await interaction.message.delete().catch(console.error);
-            logAction(`${interaction.user.tag} a supprimé un événement.`);
             return interaction.reply({ content: '🗑️ Événement supprimé.', ephemeral: true });
         }
     }
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
 
