@@ -64,17 +64,19 @@ client.once(Events.ClientReady, async () => {
     }
 });
 
-// Message de bienvenue\ nclient.on(Events.GuildMemberAdd, member => {
-const channel = member.guild.systemChannel;
-if (!channel) return;
-channel.send({
-    embeds: [
-        new EmbedBuilder()
-            .setTitle(`👋 Bienvenue, ${member.user.username} !`)
-            .setDescription(`Bienvenue sur **${member.guild.name}**. Pense à lire les règles et choisir ton rôle !`)
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-            .setColor(0x00AE86)
-    ]
+// Message de bienvenue
+client.on(Events.GuildMemberAdd, member => {
+    const channel = member.guild.systemChannel;
+    if (!channel) return;
+    channel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle(`👋 Bienvenue, ${member.user.username} !`)
+                .setDescription(`Bienvenue sur **${member.guild.name}**. Pense à lire les règles et choisir ton rôle !`)
+                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                .setColor(0x00AE86)
+        ]
+    });
 });
 });
 
