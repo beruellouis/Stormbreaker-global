@@ -53,11 +53,19 @@ client.once(Events.ClientReady, async () => {
     if (currentVersion !== lastVersion) {
         const channel = await client.channels.fetch(updateChannelId).catch(() => null);
         if (channel && channel.isTextBased()) {
+            let changelogText = "- Aucun changelog disponible.";
+            const changelogFile = path.join(__dirname, 'changelog.json');
+            if (fs.existsSync(changelogFile)) {
+                const changelog = JSON.parse(fs.readFileSync(changelogFile));
+                changelogText = changelog[currentVersion] || changelogText;
+            }
+
             const embed = new EmbedBuilder()
                 .setTitle(`🔄 Mise à jour du bot : v${currentVersion}`)
-                .setDescription('- Ajout des nouveautés ici\n- Corrections de bugs ici')
+                .setDescription(changelogText)
                 .setColor(0xFFA500)
                 .setTimestamp();
+
             await channel.send({ embeds: [embed] });
         }
         fs.writeFileSync(versionFile, currentVersion);
