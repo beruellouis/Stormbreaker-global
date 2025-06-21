@@ -145,7 +145,7 @@ client.on(Events.InteractionCreate, async interaction => {
             visibleRoles = ['Administrator', 'moderator'];
         } else if (id === 'open_candidature') {
             salonName = `candidature-${member.user.username}`;
-            visibleRoles = ['recruiter'];
+            visibleRoles = ['Administrator', 'recruiter'];
         } else if (id === 'open_ambassade') {
             salonName = `ambassade-${member.user.username}`;
             visibleRoles = ['Administrator', 'moderator'];
@@ -159,7 +159,7 @@ client.on(Events.InteractionCreate, async interaction => {
             ];
 
             visibleRoles.forEach(roleName => {
-                const role = guild.roles.cache.find(r => r.name === roleName);
+                const role = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
                 if (role) overwrites.push({ id: role.id, allow: ['ViewChannel', 'SendMessages'] });
             });
 
@@ -177,8 +177,10 @@ client.on(Events.InteractionCreate, async interaction => {
             await salon.send({ content: `<@${member.id}>`, components: [btn] });
             return interaction.reply({ content: '✅ Salon créé.', ephemeral: true });
         }
+    }
+});
 
-        // Suppression de salon
+// Suppression de salon
         if (id === 'delete_channel') {
             const userRoles = interaction.member.roles.cache.map(r => r.name);
             const allowedRoles = ['Administrator', 'moderator', 'recruiter'];
