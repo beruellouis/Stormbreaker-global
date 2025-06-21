@@ -180,17 +180,31 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 
-// Suppression de salon
-        if (id === 'delete_channel') {
-            const userRoles = interaction.member.roles.cache.map(r => r.name);
+client.on(Events.InteractionCreate, async interaction => {
+    if (interaction.isButton()) {
+        const id = interaction.customId;
+
+        // ... tes autres boutons open_ticket, candidature, ambassade
+
+        // 🔻 CE BLOC VA À LA FIN DU if (interaction.isButton()) :
+        if (interaction.customId === 'delete_channel') {
             const allowedRoles = ['Administrator', 'moderator', 'recruiter'];
-            if (!userRoles.some(r => allowedRoles.includes(r))) {
-                return interaction.reply({ content: '❌ Tu n’as pas la permission.', ephemeral: true });
-                await interaction.channel.delete().catch(console.error);
+            const hasPermission = interaction.member.roles.cache.some(role =>
+                allowedRoles.includes(role.name)
+            );
+
+            if (!hasPermission) {
+                return interaction.reply({ content: '❌ Tu n’as pas la permission de supprimer ce salon.', ephemeral: true });
             }
-            
+
+            await interaction.reply({ content: '🗑️ Salon supprimé.', ephemeral: true });
+            await interaction.channel.delete().catch(console.error);
         }
+
     }
+
+    // Tu peux aussi ajouter ici les modals ou autre
 });
+
 
 client.login(process.env.DISCORD_TOKEN);
