@@ -1,4 +1,4 @@
-﻿// index.js complet avec tous les systèmes existants + rôle buttons déplacés
+﻿// index.js complet avec retranscription lors de la suppression d'un salon
 
 require('dotenv').config();
 const fs = require('fs');
@@ -27,7 +27,6 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// Chargement des commandes
 client.commands = new Map();
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
@@ -39,7 +38,6 @@ if (fs.existsSync(commandsPath)) {
         });
 }
 
-// READY
 client.once(Events.ClientReady, async () => {
     console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
@@ -74,7 +72,6 @@ client.once(Events.ClientReady, async () => {
         }
     }
 
-    // Envoi des boutons de rôles une seule fois
     const roleChannelId = process.env.ROLE_CHANNEL_ID;
     const roleChannel = await client.channels.fetch(roleChannelId).catch(() => null);
     if (!roleChannel || !roleChannel.isTextBased()) return;
@@ -82,7 +79,7 @@ client.once(Events.ClientReady, async () => {
     const roleButtonFile = 'role_button_id.txt';
     if (!fs.existsSync(roleButtonFile)) {
         const embed = new EmbedBuilder()
-            .setTitle('🎭 Choisis ton orientation')
+            .setTitle('🎝️ Choisis ton orientation')
             .setDescription('Appuie sur un bouton ci-dessous pour accéder à un salon privé')
             .setColor(0x3498DB);
 
@@ -97,7 +94,6 @@ client.once(Events.ClientReady, async () => {
     }
 });
 
-// Message de bienvenue (automatique)
 client.on(Events.GuildMemberAdd, async member => {
     const channelId = process.env.WELCOME_CHANNEL_ID;
     const channel = await member.guild.channels.fetch(channelId).catch(() => null);
@@ -113,7 +109,6 @@ client.on(Events.GuildMemberAdd, async member => {
     channel.send({ embeds: [embed] });
 });
 
-// Gestion des commandes (!)
 client.on(Events.MessageCreate, async message => {
     if (message.author.bot || !message.content.startsWith('!')) return;
     const args = message.content.slice(1).trim().split(/\s+/);
@@ -128,12 +123,9 @@ client.on(Events.MessageCreate, async message => {
     }
 });
 
-// Interaction boutons / modals / salons privés
 client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isButton()) {
         const id = interaction.customId;
-
-        // Boutons système de rôles
         const guild = interaction.guild;
         const member = interaction.member;
 
@@ -165,7 +157,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             const salon = await guild.channels.create({
                 name: salonName.toLowerCase(),
-                type: 0, // GUILD_TEXT
+                type: 0,
                 permissionOverwrites: overwrites,
                 parent: null
             });
@@ -177,17 +169,8 @@ client.on(Events.InteractionCreate, async interaction => {
             await salon.send({ content: `<@${member.id}>`, components: [btn] });
             return interaction.reply({ content: '✅ Salon créé.', ephemeral: true });
         }
-    }
-});
 
-client.on(Events.InteractionCreate, async interaction => {
-    if (interaction.isButton()) {
-        const id = interaction.customId;
-
-        // ... tes autres boutons open_ticket, candidature, ambassade
-
-        // 🔻 CE BLOC VA À LA FIN DU if (interaction.isButton()) :
-        if (interaction.customId === 'delete_channel') {
+        if (id === 'delete_channel') {
             const allowedRoles = ['Administrator', 'moderator', 'recruiter'];
             const hasPermission = interaction.member.roles.cache.some(role =>
                 allowedRoles.includes(role.name)
@@ -198,13 +181,33 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             await interaction.reply({ content: '🗑️ Salon supprimé.', ephemeral: true });
+
+            // Transcription
+            const logChannelId = process.env.LOG_CHANNEL_ID;
+            const logChannel = await interaction.guild.channels.fetch(logChannelId).catch(() => null);
+
+            if (logChannel && logChannel.isTextBased()) {
+                const messages = await interaction.channel.messages.fetch({ limit: 100 });
+                const content = messages
+                    .map(msg => `[${msg.createdAt.toISOString()}] ${msg.author.username}: ${msg.content}`)
+                    .reverse()
+                    .join('\n');
+
+                const fileName = `${interaction.channel.name}-${Date.now()}.txt`;
+                fs.writeFileSync(fileName, content || 'Aucun message dans ce salon.');
+
+                await logChannel.send({
+                    content: `📄 Salon supprimé par ${interaction.user.tag} : **${interaction.channel.name}**`,
+                    files: [fileName]
+                });
+
+                fs.unlinkSync(fileName);
+            }
+
             await interaction.channel.delete().catch(console.error);
         }
-
     }
-
-    // Tu peux aussi ajouter ici les modals ou autre
 });
 
-
 client.login(process.env.DISCORD_TOKEN);
+
