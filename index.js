@@ -12,7 +12,9 @@ const {
     ButtonStyle,
     ModalBuilder,
     TextInputBuilder,
-    TextInputStyle
+    TextInputStyle,
+    ChannelType,
+    PermissionsBitField
 } = require('discord.js');
 
 const client = new Client({
@@ -49,7 +51,6 @@ client.once(Events.ClientReady, async () => {
 
     console.log(`📦 Version actuelle : ${currentVersion}`);
 
-    // Lecture de lastversion.txt
     if (fs.existsSync(versionFile)) {
         lastVersion = fs.readFileSync(versionFile, 'utf8').trim();
         console.log(`📄 Version précédente détectée : ${lastVersion}`);
@@ -57,29 +58,19 @@ client.once(Events.ClientReady, async () => {
         console.log('📄 Aucune version précédente détectée.');
     }
 
-    // Comparaison
     if (currentVersion !== lastVersion) {
-        console.log('🔁 Nouvelle version détectée, préparation du message...');
-
         const channel = await client.channels.fetch(updateChannelId).catch(err => {
             console.error('❌ Erreur récupération du salon :', err);
             return null;
         });
 
-        if (!channel || !channel.isTextBased()) {
-            return console.error('❌ Salon invalide ou inaccessible.');
-        }
+        if (!channel || !channel.isTextBased()) return;
 
         let changelogText = '- Aucun changelog disponible.';
         const changelogFile = path.join(__dirname, 'changelog.json');
-
         if (fs.existsSync(changelogFile)) {
-            console.log('📘 Lecture du changelog.json...');
             const changelog = JSON.parse(fs.readFileSync(changelogFile, 'utf8'));
             changelogText = changelog[currentVersion] || changelogText;
-            console.log('📘 Contenu du changelog pour cette version :', changelogText);
-        } else {
-            console.log('⚠️ Aucun fichier changelog.json trouvé.');
         }
 
         const embed = new EmbedBuilder()
@@ -89,16 +80,11 @@ client.once(Events.ClientReady, async () => {
             .setTimestamp();
 
         await channel.send({ embeds: [embed] });
-        console.log('✅ Message de mise à jour envoyé dans Discord.');
-
         fs.writeFileSync(versionFile, currentVersion);
-        console.log('📁 lastversion.txt mis à jour.');
-    } else {
-        console.log('✅ Aucune nouvelle version détectée, pas de message envoyé.');
     }
 });
 
-// Message de bienvenue
+// Message de bienvenue avec boutons
 client.on(Events.GuildMemberAdd, async member => {
     const channelId = process.env.WELCOME_CHANNEL_ID;
     const channel = await member.guild.channels.fetch(channelId).catch(() => null);
@@ -106,12 +92,27 @@ client.on(Events.GuildMemberAdd, async member => {
 
     const embed = new EmbedBuilder()
         .setTitle(`👋 Bienvenue, ${member.user.username} !`)
-        .setDescription(`Bienvenue sur **${member.guild.name}**.\n\n💬 Pense à lire les règles.\n🎭 Choisis ton rôle pour commencer.`)
-        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+        .setDescription("Bienvenue sur **" + member.guild.name + "** !\n\nChoisissez une des options ci-dessous pour débuter votre intégration :")
         .setColor(0x00AE86)
+        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setTimestamp();
 
-    channel.send({ embeds: [embed] });
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('ticket_demande')
+            .setLabel('🎫 Ticket')
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId('candidature_demande')
+            .setLabel('📄 Candidature')
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId('ambassade_demande')
+            .setLabel('🤝 Ambassade')
+            .setStyle(ButtonStyle.Secondary)
+    );
+
+    await channel.send({ embeds: [embed], components: [row] });
 });
 
 // Commandes texte
@@ -129,88 +130,71 @@ client.on(Events.MessageCreate, async message => {
     }
 });
 
-// Gestion des interactions : bouton + modal + event
+// Interaction : boutons + modals + événements
 client.on(Events.InteractionCreate, async interaction => {
-    // Ouverture du modal de don
-    if (interaction.isButton() && interaction.customId === 'open_donation_modal') {
-        const modal = new ModalBuilder()
-            .setCustomId('custom_donation_modal')
-            .setTitle('Faire un don à Stormbreaker');
-        const input = new TextInputBuilder()
-            .setCustomId('donation_amount')
-            .setLabel('Montant à donner (en AUEC)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Ex : 5000')
-            .setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        return interaction.showModal(modal);
+    // Création de salon privé (ticket, ambassade, candidature)
+    const salonTypes = {
+        'ticket_demande': { name: 'ticket', roles: ['Administrator', 'moderator'] },
+        'candidature_demande': { name: 'candidature', roles: ['recruiter'] },
+        'ambassade_demande': { name: 'ambassade', roles: ['Administrator', 'moderator'] }
+    };
+
+    if (interaction.isButton() && salonTypes[interaction.customId]) {
+        const { name, roles } = salonTypes[interaction.customId];
+        const channelName = `${name}-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, '');
+
+        const overwrites = [
+            {
+                id: interaction.guild.id,
+                deny: [PermissionsBitField.Flags.ViewChannel]
+            },
+            {
+                id: interaction.user.id,
+                allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+            },
+            ...roles.map(roleName => {
+                const role = interaction.guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+                return role ? {
+                    id: role.id,
+                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+                } : null;
+            }).filter(Boolean)
+        ];
+
+        const newChannel = await interaction.guild.channels.create({
+            name: channelName,
+            type: ChannelType.GuildText,
+            permissionOverwrites: overwrites,
+            reason: `Création de salon ${name} pour ${interaction.user.tag}`
+        });
+
+        const deleteButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('delete_private_channel')
+                .setLabel('❌ Supprimer ce salon')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        await newChannel.send({
+            content: `Bienvenue ${interaction.user}, vous pouvez discuter ici.`,
+            components: [deleteButton]
+        });
+
+        return interaction.reply({ content: `✅ Salon ${channelName} créé.`, ephemeral: true });
     }
 
-    // Traitement du modal de don
-    if (interaction.isModalSubmit() && interaction.customId === 'custom_donation_modal') {
-        const montant = parseInt(interaction.fields.getTextInputValue('donation_amount'), 10);
-        if (isNaN(montant) || montant <= 0) {
-            return interaction.reply({ content: '❌ Montant invalide.', ephemeral: true });
-        }
-        const bp = path.join(__dirname, 'banque.json');
-        const banque = JSON.parse(fs.readFileSync(bp));
-        banque.total = banque.total || 0;
-        banque.donateurs = banque.donateurs || {};
-        banque.transactions = banque.transactions || [];
-        const uid = interaction.user.id;
-        banque.total += montant;
-        banque.donateurs[uid] = (banque.donateurs[uid] || 0) + montant;
-        banque.transactions.push({ userId: uid, username: interaction.user.username, amount: montant, timestamp: new Date().toISOString() });
-        fs.writeFileSync(bp, JSON.stringify(banque, null, 2));
-        return interaction.reply({ content: `💸 Merci pour ton don de **${montant.toLocaleString()} aUEC** !`, ephemeral: true });
-    }
+    if (interaction.isButton() && interaction.customId === 'delete_private_channel') {
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        const allowedRoles = ['Administrator', 'moderator', 'recruiter'];
+        const hasAccess = member.roles.cache.some(r => allowedRoles.includes(r.name));
 
-    // Gestion des boutons d'événement
-    if (interaction.isButton()) {
-        const id = interaction.customId;
-        const eventsPath = path.join(__dirname, 'events.json');
-        const events = JSON.parse(fs.readFileSync(eventsPath));
-
-        // Participation
-        if (id.startsWith('join_event_')) {
-            const idx = parseInt(id.split('_')[2], 10);
-            const ev = events[idx];
-            if (!ev) return interaction.reply({ content: '❌ Événement introuvable.', ephemeral: true });
-            ev.participants = ev.participants || [];
-            if (ev.participants.includes(interaction.user.id)) {
-                return interaction.reply({ content: '✅ Tu participes déjà.', ephemeral: true });
-            }
-            ev.participants.push(interaction.user.id);
-            fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
-            return interaction.reply({ content: '🎉 Participation confirmée !', ephemeral: true });
+        if (!hasAccess) {
+            return interaction.reply({ content: '❌ Vous n\'avez pas la permission de supprimer ce salon.', ephemeral: true });
         }
 
-        // Désistement
-        if (id.startsWith('decline_event_')) {
-            const idx = parseInt(id.split('_')[2], 10);
-            const ev = events[idx];
-            if (!ev) return interaction.reply({ content: '❌ Événement introuvable.', ephemeral: true });
-            ev.participants = (ev.participants || []).filter(u => u !== interaction.user.id);
-            fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
-            return interaction.reply({ content: '❌ Tu ne participes plus.', ephemeral: true });
-        }
-
-        // Suppression (Admin E-5)
-        if (id.startsWith('delete_event_')) {
-            const idx = parseInt(id.split('_')[2], 10);
-            const adminRole = interaction.guild.roles.cache.find(r => r.name === 'E-5');
-            if (!adminRole || !interaction.member.roles.cache.has(adminRole.id)) {
-                return interaction.reply({ content: '❌ Permission refusée.', ephemeral: true });
-            }
-            if (!events[idx]) {
-                return interaction.reply({ content: '❌ Événement introuvable.', ephemeral: true });
-            }
-            events.splice(idx, 1);
-            fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
-            await interaction.message.delete().catch(console.error);
-            return interaction.reply({ content: '🗑️ Événement supprimé.', ephemeral: true });
-        }
+        await interaction.channel.delete().catch(console.error);
     }
 });
 
 client.login(process.env.DISCORD_TOKEN);
+

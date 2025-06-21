@@ -1,7 +1,8 @@
 {
+  "1.1.1": "- Finalisation du message d'accueil'",
   "1.1.0": "- ajout de la commande !logs",
   "1.0.4": "- Optimisation finales ",
-  "1.0.3": "_ Ajout du système de changelog automatique\n- Correction de bugs sur les événements",
+  "1.0.3": "_ Ajout du systï¿½me de changelog automatique\n- Correction de bugs sur les ï¿½vï¿½nements",
   "1.0.2": "- Ajout de l'accueil avec boutons\n- Correction de bugs mineurs",
-  "1.0.1": "- Système de mise à jour automatique\n- Ajout du système de banque"
+  "1.0.1": "- Systï¿½me de mise ï¿½ jour automatique\n- Ajout du systï¿½me de banque"
 }
