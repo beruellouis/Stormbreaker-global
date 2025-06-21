@@ -186,8 +186,9 @@ client.on(Events.InteractionCreate, async interaction => {
             const allowedRoles = ['Administrator', 'moderator', 'recruiter'];
             if (!userRoles.some(r => allowedRoles.includes(r))) {
                 return interaction.reply({ content: '❌ Tu n’as pas la permission.', ephemeral: true });
+                await interaction.channel.delete().catch(console.error);
             }
-            await interaction.channel.delete().catch(console.error);
+            
         }
     }
 });
