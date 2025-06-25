@@ -229,10 +229,13 @@ client.on(Events.InteractionCreate, async interaction => {
         const eventsPath = 'events.json';
         const events = JSON.parse(fs.readFileSync(eventsPath));
         if (!events[idx]) return interaction.reply({ content: 'Evénement introuvable.', ephemeral: true });
+
         events[idx].participants = events[idx].participants.filter(u => u !== interaction.user.id);
         fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
+
         return interaction.reply({
-            content: 'Tu es retiré de l'événement.', ephemeral: true });
+            content: "Tu es retiré de l'événement.", ephemeral: true
+        });
     }
 
     if (interaction.isButton() && id.startsWith('delete_event_')) {
