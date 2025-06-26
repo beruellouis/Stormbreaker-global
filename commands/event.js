@@ -1,115 +1,115 @@
 ﻿const fs = require('fs');
 const path = require('path');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const {
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
+} = require('discord.js');
 
 const eventsFile = path.join(__dirname, '..', 'events.json');
-
-function saveEvents(events) {
-    fs.writeFileSync(eventsFile, JSON.stringify(events, null, 2));
-}
+const msgIdFile = path.join(__dirname, '..', 'eventmsg_id.txt');
 
 function loadEvents() {
     if (!fs.existsSync(eventsFile)) return [];
-    return JSON.parse(fs.readFileSync(eventsFile));
+    return JSON.parse(fs.readFileSync(eventsFile, 'utf8'));
+}
+
+function saveEvents(events) {
+    fs.writeFileSync(eventsFile, JSON.stringify(events, null, 2), 'utf8');
+}
+
+function buildEventsEmbed(events) {
+    if (events.length === 0) {
+        return new EmbedBuilder()
+            .setTitle('📋 Événements Stormbreaker')
+            .setDescription('Aucun événement pour l’instant.')
+            .setColor(0x3498DB)
+            .setTimestamp();
+    }
+
+    const fields = events.map((e, i) => {
+        const participants = (e.participants || []).map(u => `<@${u}>`).join(', ') || 'Personne';
+        const nonParticipants = (e.nonParticipants || []).map(u => `<@${u}>`).join(', ') || 'Aucun refus';
+        return {
+            name: `📌 [${i}] ${e.title} — ${e.date}`,
+            value: `${e.description}\n👥 Participants : ${participants}\n🙅 Refus : ${nonParticipants}`
+        };
+    });
+
+    return new EmbedBuilder()
+        .setTitle('📋 Événements Stormbreaker')
+        .addFields(fields)
+        .setColor(0x3498DB)
+        .setTimestamp();
 }
 
 module.exports = {
     name: 'event',
-    description: 'Gère les événements de l’organisation',
+    description: 'Gère les événements (list, add, remove)',
     async execute(message, args) {
-        const [sub, ...rest] = args;
+        const sub = args[0];
+        const rest = args.slice(1);
         let events = loadEvents();
 
-        // 📋 Afficher les événements
+        // → LIST: envoie ou édite le message permanent
         if (!sub || sub === 'list') {
-            if (events.length === 0) {
-                return message.channel.send('📭 Aucun événement programmé.');
+            const embed = buildEventsEmbed(events);
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('refresh_events')
+                    .setLabel('🔄 Rafraîchir')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            // Récupère l'ID si déjà envoyé
+            let msgId = fs.existsSync(msgIdFile)
+                ? fs.readFileSync(msgIdFile, 'utf8').trim()
+                : null;
+
+            const ch = message.channel;
+            let msg = null;
+            if (msgId) {
+                msg = await ch.messages.fetch(msgId).catch(() => null);
             }
-
-            for (let i = 0; i < events.length; i++) {
-                const e = events[i];
-
-                const participants = (e.participants || []).map(id => `<@${id}>`).join(', ') || 'Personne encore';
-                const nonParticipants = (e.nonParticipants || []).map(id => `<@${id}>`).join(', ') || 'Aucun refus';
-
-                const buttons = [
-                    new ButtonBuilder()
-                        .setCustomId(`join_event_${i}`)
-                        .setLabel('✅ Je participe')
-                        .setStyle(ButtonStyle.Success),
-                    new ButtonBuilder()
-                        .setCustomId(`decline_event_${i}`)
-                        .setLabel('❌ Je ne participe pas')
-                        .setStyle(ButtonStyle.Secondary)
-                ];
-
-                // 🛡️ Ajouter le bouton supprimer si membre a le rôle "E-5"
-                if (message.member.roles.cache.some(role => role.name === 'E-5')) {
-                    buttons.push(
-                        new ButtonBuilder()
-                            .setCustomId(`delete_event_${i}`)
-                            .setLabel('🗑️ Supprimer')
-                            .setStyle(ButtonStyle.Danger)
-                    );
-                }
-
-                const row = new ActionRowBuilder().addComponents(buttons);
-
-                await message.channel.send({
-                    embeds: [{
-                        title: `📌 ${e.title}`,
-                        description: `🗓️ ${e.date}\n${e.description}`,
-                        fields: [
-                            { name: '👥 Participants', value: participants },
-                            { name: '🙅 Non-participants', value: nonParticipants }
-                        ],
-                        color: 0x3498DB
-                    }],
-                    components: [row]
-                });
+            if (msg) {
+                await msg.edit({ embeds: [embed], components: [row] });
+            } else {
+                msg = await ch.send({ embeds: [embed], components: [row] });
+                fs.writeFileSync(msgIdFile, msg.id, 'utf8');
             }
             return;
         }
 
-        // ➕ Ajouter un événement
+        // → ADD
         if (sub === 'add') {
-            if (!message.member.roles.cache.some(role => role.name === 'E-5')) {
-                return message.reply('🚫 Tu dois avoir le rôle `E-5` pour créer un événement.');
+            if (!message.member.roles.cache.some(r => r.name === 'E-5')) {
+                return message.reply('🚫 Tu dois avoir le rôle E-5.');
             }
-
-            const input = rest.join(' ').split('|');
-            if (input.length < 3) {
+            const parts = rest.join(' ').split('|').map(s => s.trim());
+            if (parts.length < 3) {
                 return message.reply('❌ Format : `!event add Titre | Date | Description`');
             }
-
-            const [title, date, description] = input.map(x => x.trim());
+            const [title, date, description] = parts;
             events.push({ title, date, description, participants: [], nonParticipants: [] });
             saveEvents(events);
-
-            await message.channel.send({
-                content: '@everyone\n📢 **NOUVEL ÉVÉNEMENT**\n📌 ' + title + '\n🗓️ ' + date + '\n' + description,
-                allowedMentions: { parse: ['everyone'] }
-            });
-
-            return message.channel.send(`✅ Événement **${title}** ajouté.`);
+            await message.channel.send(`📢 Événement **${title}** ajouté !`);
+            return;
         }
 
-        // 🗑️ Supprimer un événement
+        // → REMOVE
         if (sub === 'remove') {
-            if (!message.member.roles.cache.some(role => role.name === 'E-5')) {
-                return message.reply('🚫 Tu dois avoir le rôle `E-5` pour supprimer un événement.');
+            if (!message.member.roles.cache.some(r => r.name === 'E-5')) {
+                return message.reply('🚫 Tu dois avoir le rôle E-5.');
             }
-
-            const id = parseInt(rest[0]);
-            if (isNaN(id) || id < 0 || id >= events.length) {
+            const idx = parseInt(rest[0], 10);
+            if (isNaN(idx) || idx < 0 || idx >= events.length) {
                 return message.reply('❌ ID invalide.');
             }
-
-            const removed = events.splice(id, 1)[0];
+            const removed = events.splice(idx, 1)[0];
             saveEvents(events);
             return message.channel.send(`🗑️ Événement **${removed.title}** supprimé.`);
         }
 
-        message.reply('❌ Sous-commande inconnue.');
+        return message.reply('❌ Sous-commande inconnue. Utilise `list`, `add`, ou `remove`.');
     }
 };
