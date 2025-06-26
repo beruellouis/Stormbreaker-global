@@ -234,7 +234,7 @@ client.on(Events.InteractionCreate, async interaction => {
         fs.writeFileSync(eventsPath, JSON.stringify(events, null, 2));
 
         return interaction.reply({
-            content: "Tu es retiré de l'événement.", ephemeral: true
+            content: 'Tu es retiré de l\'événement.', ephemeral: true
         });
     }
 
